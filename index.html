@@ -1116,7 +1116,6 @@ function animateFace(dt,t,lookTarget){
   for (const e of eyes) e.g.scale.setScalar(1+w*0.15);
   torso.scale.y=1+Math.sin(t*2.2)*0.015;
 }
-const nameTag=label('Maikol',null,'#ff7a9c',0.005); nameTag.position.set(0,2.2,0.3); car.add(nameTag);
 const headLight=new THREE.SpotLight(0xfff1c8,40,22,0.55,0.6,1.2);
 headLight.position.set(0,0.75,-2.05); headLight.target.position.set(0,-2,-12); car.add(headLight,headLight.target);
 
@@ -1280,7 +1279,6 @@ function tick(){
   const ck=Math.min(1,dt*3.2);
   camPos.lerp(backP,ck); camLook.lerp(frontP,ck);
   camera.position.copy(camPos); camera.lookAt(camLook);
-  nameTag.material.opacity=1-camBlend; nameTag.visible=camBlend<0.95;
   camera.fov=THREE.MathUtils.lerp(camera.fov,(camMode==='back'?55+sp*10:camMode==='side'?50:55),0.08); camera.updateProjectionMatrix();
 
   renderer.render(scene,camera);
