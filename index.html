@@ -234,6 +234,21 @@ const farStar=new THREE.Mesh(new THREE.SphereGeometry(3,16,12),new THREE.MeshBas
 farStar.material.userData.max=1; planetMats.push(farStar.material); farStar.position.set(-18,R+5,-240); planetsG.add(farStar);
 const farGlow=new THREE.Mesh(new THREE.SphereGeometry(9,16,12),new THREE.MeshBasicMaterial({color:0xffc98a,fog:false,transparent:true,opacity:0,depthWrite:false}));
 farGlow.material.userData.max=0.18; planetMats.push(farGlow.material); farStar.add(farGlow);
+// La luna y los planetas se ubican según la cámara, dentro de la franja de cielo visible
+// (entre el horizonte del planeta y el borde superior de la pantalla), en cualquier vista o pantalla.
+const _cd=new THREE.Vector3();
+function placeSkyObjects(){
+  camera.getWorldDirection(_cd);
+  const yaw=Math.atan2(_cd.x,_cd.z), pitch=Math.asin(THREE.MathUtils.clamp(_cd.y,-1,1));
+  const vf=THREE.MathUtils.degToRad(camera.fov), hf=2*Math.atan(Math.tan(vf/2)*camera.aspect);
+  const dip=-Math.acos(Math.min(1,R/camera.position.length()));
+  const top=pitch+vf/2*0.9, bottom=Math.max(dip+0.05,pitch-vf/2);
+  const cp=camera.position;
+  for (const [o,az,ef,d] of SKY_PLACES){
+    const el=bottom+(top-bottom)*ef, a=yaw+az*hf*0.5;
+    o.position.set(cp.x+d*Math.cos(el)*Math.sin(a), cp.y+d*Math.sin(el), cp.z+d*Math.cos(el)*Math.cos(a));
+  }
+}
 function updatePlanets(dt,t,k){
   planetsG.visible=k>0.01;
   if (!planetsG.visible) return;
@@ -242,6 +257,7 @@ function updatePlanets(dt,t,k){
   giantMoon.position.set(Math.cos(t*0.08)*58,Math.sin(t*0.08)*10,Math.sin(t*0.08)*30);
 }
 
+const SKY_PLACES=[[giant,0.52,0.48,215],[ice,-0.56,0.4,205],[red,-0.12,0.8,232],[farStar,0.14,0.9,240],[moon,-0.66,0.8,200],[moonGlow,-0.66,0.8,200]];
 // ================= MODOS DE CIELO =================
 const waterMats=[]; let lampBulbM=null, carHeadLight=null;
 const PAL={
@@ -1535,6 +1551,7 @@ function tick(){
   camPos.lerp(backP,ck); camLook.lerp(frontP,ck);
   camera.position.copy(camPos); camera.lookAt(camLook);
   camera.fov=THREE.MathUtils.lerp(camera.fov,(camMode==='back'?55+sp*10:camMode==='side'?50:55),0.08); camera.updateProjectionMatrix();
+  placeSkyObjects();
 
   renderer.render(scene,camera);
   requestAnimationFrame(tick);
