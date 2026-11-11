@@ -32,7 +32,7 @@ En **modo libre** puedes salir del camino: chocas solo con árboles, faroles y e
 ## Cielos
 
 - **Atardecer:** la puesta de sol de siempre.
-- **24 h:** el cielo sigue la hora local de quien juega: día, amanecer/atardecer o noche con luna y estrellas.
+- **24 h:** sol real. Calcula la altura del sol con la fecha, la hora y la ubicación (Santiago para Chile; otras zonas horarias, una ciudad de referencia), así que el amanecer y el atardecer cambian con la estación.
 - **Estrellado:** noche despejada con vía láctea, luna y estrellas fugaces.
 
 La elección de cielo y distancia se recuerda en el navegador.

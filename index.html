@@ -193,16 +193,44 @@ const SKY_ORDER=['sunset','day24','stars'], SKY_NAME={sunset:'🌅 Cielo: Atarde
 let skyMode='sunset'; try{ const v=localStorage.getItem('mdw_sky'); if (SKY_ORDER.includes(v)) skyMode=v; }catch(e){}
 const _ca=new THREE.Color(), _cb=new THREE.Color();
 function lerpHex(a,b,k,out){ return out.set(a).lerp(_cb.set(b),k); }
-// fase del día según la hora local de quien mira
+// ---- sol real: altura del sol según fecha, hora y ubicación ----
+// Ubicación: Santiago para Chile; otras zonas horarias, una ciudad de referencia o la longitud según el huso horario.
+const TZ_COORDS={'America/Santiago':[-33.45,-70.67],'America/Punta_Arenas':[-53.16,-70.91],'America/Argentina/Buenos_Aires':[-34.6,-58.38],'America/Sao_Paulo':[-23.55,-46.63],
+  'America/Lima':[-12.05,-77.04],'America/Bogota':[4.71,-74.07],'America/Caracas':[10.48,-66.9],'America/Mexico_City':[19.43,-99.13],'America/Montevideo':[-34.9,-56.16],
+  'America/La_Paz':[-16.5,-68.15],'America/Asuncion':[-25.26,-57.58],'America/Guayaquil':[-2.19,-79.89],'America/New_York':[40.71,-74.0],'America/Chicago':[41.88,-87.63],
+  'America/Denver':[39.74,-104.99],'America/Los_Angeles':[34.05,-118.24],'Europe/Madrid':[40.42,-3.7],'Europe/London':[51.5,-0.12],'Europe/Paris':[48.86,2.35],
+  'Europe/Berlin':[52.52,13.4],'Europe/Rome':[41.9,12.5],'Asia/Tokyo':[35.68,139.69],'Australia/Sydney':[-33.87,151.21]};
+const SUN_LOC=(()=>{ let tz='America/Santiago'; try{ tz=Intl.DateTimeFormat().resolvedOptions().timeZone||tz; }catch(e){}
+  if (TZ_COORDS[tz]) return {lat:TZ_COORDS[tz][0],lon:TZ_COORDS[tz][1],name:tz.split('/').pop().replace(/_/g,' ')};
+  if (tz.startsWith('America/Argentina')) return {lat:-34.6,lon:-58.38,name:'Argentina'};
+  const off=-new Date().getTimezoneOffset()/60; return {lat:0,lon:off*15,name:tz}; })();
+function sunElevation(date,lat,lon){
+  const rad=Math.PI/180, d=date.getTime()/86400000-10957.5;
+  const g=(357.529+0.98560028*d)*rad, q=280.459+0.98564736*d;
+  const L=(q+1.915*Math.sin(g)+0.020*Math.sin(2*g))*rad, e=(23.439-0.00000036*d)*rad;
+  const dec=Math.asin(Math.sin(e)*Math.sin(L)), ra=Math.atan2(Math.cos(e)*Math.sin(L),Math.cos(L));
+  const gmst=((18.697374558+24.06570982441908*d)%24+24)%24;
+  const H=(gmst*15+lon)*rad-ra;
+  return Math.asin(Math.sin(lat*rad)*Math.sin(dec)+Math.cos(lat*rad)*Math.cos(dec)*Math.cos(H))/rad;
+}
+let sunTimesCache=null;
+function sunTimes(now){ // amanecer y puesta de sol de hoy (hora local), por búsqueda minuto a minuto
+  const key=now.toDateString(); if (sunTimesCache && sunTimesCache.key===key) return sunTimesCache;
+  const base=new Date(now); base.setHours(0,0,0,0); let rise=null, set=null, prev=sunElevation(base,SUN_LOC.lat,SUN_LOC.lon);
+  for (let m=2;m<=1440;m+=2){ const t=new Date(base.getTime()+m*60000), el=sunElevation(t,SUN_LOC.lat,SUN_LOC.lon);
+    if (prev<-0.833 && el>=-0.833 && !rise) rise=t; if (prev>=-0.833 && el<-0.833 && !set) set=t; prev=el; }
+  const f=t=>t?t.toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'}):'—';
+  return sunTimesCache={key,rise:f(rise),set:f(set)};
+}
 function dayPhase(){
-  const d=new Date(), h=d.getHours()+d.getMinutes()/60;
-  const e=Math.sin((h-6.5)/12*Math.PI); // >0 de día (≈6:30 a 18:30)
+  const d=new Date(), el=sunElevation(d,SUN_LOC.lat,SUN_LOC.lon), morning=d.getHours()<12;
   let A,B,k,label;
-  if (e>0.3){ A=PAL.day;B=PAL.day;k=0;label='Día'; }
-  else if (e>0){ A=PAL.sunset;B=PAL.day;k=e/0.3;label=h<12?'Amanecer':'Atardecer'; }
-  else if (e>-0.2){ A=PAL.sunset;B=PAL.night;k=-e/0.2;label=h<12?'Amanecer':'Atardecer'; }
+  if (el>12){ A=PAL.day;B=PAL.day;k=0;label='Día'; }
+  else if (el>0){ A=PAL.sunset;B=PAL.day;k=el/12;label=morning?'Amanecer':'Atardecer'; }
+  else if (el>-8){ A=PAL.sunset;B=PAL.night;k=-el/8;label=morning?'Amanecer':'Atardecer'; }
   else { A=PAL.night;B=PAL.night;k=0;label='Noche'; }
-  return {A,B,k,label,clock:d.toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'})};
+  const st=sunTimes(d);
+  return {A,B,k,label,el,rise:st.rise,set:st.set,place:SUN_LOC.name,clock:d.toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'})};
 }
 const curSky={}; let skyBlend=null;
 function targetSky(){
@@ -1297,7 +1325,7 @@ function paintSky(info){ const b=document.getElementById('skyBtn');
   b.classList.toggle('on',skyMode!=='sunset'); }
 function toggleSky(){ skyMode=SKY_ORDER[(SKY_ORDER.indexOf(skyMode)+1)%3]; try{ localStorage.setItem('mdw_sky',skyMode); }catch(e){}
   paintSky(skyMode==='day24'?dayPhase():null);
-  toast(skyMode==='sunset'?'🌅 Puesta de sol':skyMode==='stars'?'✨ Cielo estrellado':'🕑 Modo 24 h: el cielo sigue tu hora local'); }
+  toast(skyMode==='sunset'?'🌅 Puesta de sol':skyMode==='stars'?'✨ Cielo estrellado':(()=>{ const i=dayPhase(); return `🕑 Sol real · amanece ${i.rise} · se pone ${i.set}`; })()); }
 document.getElementById('distBtn').addEventListener('click',toggleDist);
 document.getElementById('skyBtn').addEventListener('click',toggleSky);
 paintDist(); paintSky(skyMode==='day24'?dayPhase():null);
@@ -1310,7 +1338,7 @@ function syncSheet(){
   const cur={cam:camMode,dist:distMode,sky:skyMode,mode};
   sheet.querySelectorAll('.seg').forEach(g=>g.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.v===cur[g.dataset.group])));
   const info=skyMode==='day24'?dayPhase():null;
-  document.getElementById('skyHint').textContent = info ? `Según tu hora local: ${info.clock} · ${info.label}` : skyMode==='stars' ? 'Noche despejada con vía láctea y estrellas fugaces' : 'La puesta de sol de siempre';
+  document.getElementById('skyHint').textContent = info ? `Sol real (${info.place}): ${info.label} · amanece ${info.rise}, se pone ${info.set}` : skyMode==='stars' ? 'Noche despejada con vía láctea y estrellas fugaces' : 'La puesta de sol de siempre';
 }
 sheet.querySelectorAll('.seg').forEach(g=>g.addEventListener('click',e=>{
   const b=e.target.closest('button'); if(!b) return; const v=b.dataset.v, grp=g.dataset.group;
