@@ -25,7 +25,7 @@ Súbete al auto, recorre un pequeño planeta al atardecer y descubre mi stack, m
 | Modo libre / volver al camino | `F` | ⚙️ Vista → Recorrido |
 | Cambiar vista (trasera / frontal / lateral) | `C` | ⚙️ Vista → Cámara |
 | Distancia de cámara (normal / lejana / aérea) | `V` | ⚙️ Vista → Distancia |
-| Cielo (atardecer / 24 h / estrellado) | `L` | ⚙️ Vista → Cielo |
+| Cielo (atardecer / 24 h / estrellado / planetario) | `L` | ⚙️ Vista → Cielo |
 
 En **modo libre** puedes salir del camino: chocas solo con árboles, faroles y edificios; las flores y el pasto se aplastan (y se levantan solos).
 
@@ -33,7 +33,8 @@ En **modo libre** puedes salir del camino: chocas solo con árboles, faroles y e
 
 - **Atardecer:** la puesta de sol de siempre.
 - **24 h:** sol real. Calcula la altura del sol con la fecha, la hora y la ubicación (Santiago para Chile; otras zonas horarias, una ciudad de referencia), así que el amanecer y el atardecer cambian con la estación.
-- **Estrellado:** noche despejada con vía láctea, luna y estrellas fugaces.
+- **Estrellado:** noche despejada con miles de estrellas que titilan, vía láctea, luna y estrellas fugaces.
+- **Planetario:** espacio profundo con nebulosa y planetas a lo lejos: un gigante gaseoso con anillos y su luna, un planeta helado y uno rojizo con cráteres.
 
 La elección de cielo y distancia se recuerda en el navegador.
 

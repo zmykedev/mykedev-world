@@ -90,7 +90,7 @@
   <div class="sheetHead"><strong>Opciones de vista</strong><button id="sheetClose" aria-label="Cerrar opciones">✕</button></div>
   <div class="row"><span class="lbl">Cámara</span><div class="seg" data-group="cam"><button data-v="back">Trasera</button><button data-v="front">Frontal</button><button data-v="side">Lateral</button></div></div>
   <div class="row"><span class="lbl">Distancia</span><div class="seg" data-group="dist"><button data-v="normal">Normal</button><button data-v="far">Lejana</button><button data-v="aerial">Aérea</button></div></div>
-  <div class="row"><span class="lbl">Cielo</span><div class="seg" data-group="sky"><button data-v="sunset">Atardecer</button><button data-v="day24">24 h</button><button data-v="stars">Estrellado</button></div><div class="hint" id="skyHint"></div></div>
+  <div class="row"><span class="lbl">Cielo</span><div class="seg seg2" data-group="sky"><button data-v="sunset">Atardecer</button><button data-v="day24">24 h</button><button data-v="stars">Estrellado</button><button data-v="planets">Planetario</button></div><div class="hint" id="skyHint"></div></div>
   <div class="row"><span class="lbl">Recorrido</span><div class="seg seg2" data-group="mode"><button data-v="road">Camino</button><button data-v="free">Libre</button></div></div>
 </div>
 <div id="toast"></div>
@@ -135,36 +135,52 @@ scene.background = HORIZON.clone();
 scene.fog = new THREE.Fog(0xe88a9a, 30, 70);
 const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 500);
 
-const skyU={top:{value:new THREE.Color(0x1d1650)}, mid:{value:new THREE.Color(0x6a3fa0)}, bot:{value:HORIZON.clone()}};
-const sky = new THREE.Mesh(new THREE.SphereGeometry(260,32,16), new THREE.ShaderMaterial({
+const skyU={top:{value:new THREE.Color(0x1d1650)}, mid:{value:new THREE.Color(0x6a3fa0)}, bot:{value:HORIZON.clone()},
+  neb:{value:0}, neb1:{value:new THREE.Color(0xff4f9a)}, neb2:{value:new THREE.Color(0x3fc6ff)}};
+const sky = new THREE.Mesh(new THREE.SphereGeometry(260,48,24), new THREE.ShaderMaterial({
   side:THREE.BackSide, depthWrite:false, uniforms:skyU,
   vertexShader:`varying vec3 vP; void main(){ vP=normalize(position); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
-  fragmentShader:`uniform vec3 top; uniform vec3 mid; uniform vec3 bot; varying vec3 vP;
+  fragmentShader:`uniform vec3 top; uniform vec3 mid; uniform vec3 bot; uniform float neb; uniform vec3 neb1; uniform vec3 neb2; varying vec3 vP;
+    float hash(vec3 p){ p=fract(p*0.3183099+0.1); p*=17.0; return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
+    float noise(vec3 x){ vec3 i=floor(x); vec3 f=fract(x); f=f*f*(3.0-2.0*f);
+      return mix(mix(mix(hash(i),hash(i+vec3(1,0,0)),f.x),mix(hash(i+vec3(0,1,0)),hash(i+vec3(1,1,0)),f.x),f.y),
+                 mix(mix(hash(i+vec3(0,0,1)),hash(i+vec3(1,0,1)),f.x),mix(hash(i+vec3(0,1,1)),hash(i+vec3(1,1,1)),f.x),f.y),f.z); }
+    float fbm(vec3 p){ float v=0.0, a=0.5; for(int i=0;i<5;i++){ v+=a*noise(p); p*=2.03; a*=0.5; } return v; }
     void main(){ float h=clamp(vP.y*0.9+0.2,0.0,1.0);
-      vec3 c = h<0.4 ? mix(bot,mid,h/0.4) : mix(mid,top,(h-0.4)/0.6); gl_FragColor=vec4(c,1.0); }`
+      vec3 c = h<0.4 ? mix(bot,mid,h/0.4) : mix(mid,top,(h-0.4)/0.6);
+      if (neb>0.001){ float n=fbm(vP*2.6+vec3(1.7,0.3,2.1)); float m=fbm(vP*4.3+vec3(5.0,1.0,3.0));
+        c += mix(neb1,neb2,m) * smoothstep(0.48,0.86,n) * 0.55 * neb; }
+      gl_FragColor=vec4(c,1.0); }`
 }));
 scene.add(sky);
-// estrellas (más y de distintos tamaños) + vía láctea + luna
+// estrellas: shader propio (punto redondo con núcleo brillante, tamaño según la pantalla, titileo individual)
+const STAR_VS=`attribute float aSize; attribute float aPhase; attribute vec3 color; uniform float uTime; uniform float uPR; varying vec3 vC; varying float vTw;
+  void main(){ vC=color; vTw=0.7+0.3*sin(uTime*(1.3+aPhase*1.7)+aPhase*12.0);
+    gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); gl_PointSize=aSize*uPR; }`;
+const STAR_FS=`uniform float uOpacity; varying vec3 vC; varying float vTw;
+  void main(){ vec2 d=gl_PointCoord-0.5; float r=length(d); if (r>0.5) discard;
+    float halo=pow(1.0-r*2.0,2.2); float core=smoothstep(0.16,0.0,r);
+    gl_FragColor=vec4(vC*(0.8+core*1.6), (halo*0.65+core)*uOpacity*vTw); }`;
 const starMats=[];
-function starLayer(n,size,spread,band){
-  const p=new Float32Array(n*3), c=new Float32Array(n*3);
+function starLayer(n,sMin,sMax,band){
+  const p=new Float32Array(n*3), c=new Float32Array(n*3), sz=new Float32Array(n), ph=new Float32Array(n);
+  const bn=new THREE.Vector3(0.25,0.35,0.9).normalize(), e1=new THREE.Vector3(1,0,-0.28).normalize(), e2=new THREE.Vector3().crossVectors(bn,e1).normalize();
   for (let i=0;i<n;i++){
     let v;
-    if (band){ // franja de la vía láctea inclinada
-      const n=new THREE.Vector3(0.25,0.35,0.9).normalize(), e1=new THREE.Vector3(1,0,-0.28).normalize(), e2=new THREE.Vector3().crossVectors(n,e1).normalize();
-      const a=Math.random()*Math.PI*2, off=(Math.random()+Math.random()+Math.random()-1.5)*0.14*(1+0.6*Math.sin(a*3));
-      v=e1.clone().multiplyScalar(Math.cos(a)).addScaledVector(e2,Math.sin(a)).addScaledVector(n,off);
-      if (v.y<0.03) v.y=Math.abs(v.y)+0.03;
-    } else { const u=Math.random()*spread+(1-spread), t=Math.random()*Math.PI*2, s=Math.sqrt(1-u*u); v=new THREE.Vector3(s*Math.cos(t),u,s*Math.sin(t)); }
+    if (band){ const a=Math.random()*Math.PI*2, off=(Math.random()+Math.random()+Math.random()-1.5)*0.13*(1+0.6*Math.sin(a*3));
+      v=e1.clone().multiplyScalar(Math.cos(a)).addScaledVector(e2,Math.sin(a)).addScaledVector(bn,off); }
+    else { const u=Math.random()*2-1, t=Math.random()*Math.PI*2, s=Math.sqrt(1-u*u); v=new THREE.Vector3(s*Math.cos(t),u,s*Math.sin(t)); }
     v.normalize().multiplyScalar(240); p.set([v.x,v.y,v.z],i*3);
-    const tint=Math.random(); const col=tint<0.15?[0.75,0.82,1]:tint<0.25?[1,0.9,0.75]:[1,1,1];
-    c.set(band?[0.75,0.72,1]:col,i*3);
+    const tint=Math.random(); const col=band?[0.78,0.74,1]:tint<0.15?[0.72,0.82,1]:tint<0.27?[1,0.88,0.7]:[1,1,1];
+    c.set(col,i*3); sz[i]=sMin+Math.pow(Math.random(),3)*(sMax-sMin); ph[i]=Math.random();
   }
   const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.BufferAttribute(p,3)); g.setAttribute('color',new THREE.BufferAttribute(c,3));
-  const m=new THREE.PointsMaterial({size,sizeAttenuation:false,fog:false,transparent:true,opacity:0,vertexColors:true,depthWrite:false});
-  scene.add(new THREE.Points(g,m)); starMats.push(m); return m;
+  g.setAttribute('aSize',new THREE.BufferAttribute(sz,1)); g.setAttribute('aPhase',new THREE.BufferAttribute(ph,1));
+  const m=new THREE.ShaderMaterial({uniforms:{uTime:{value:0},uPR:{value:renderer.getPixelRatio()},uOpacity:{value:0}},vertexShader:STAR_VS,fragmentShader:STAR_FS,
+    transparent:true,depthWrite:false,blending:THREE.AdditiveBlending});
+  const pts=new THREE.Points(g,m); pts.frustumCulled=false; pts.renderOrder=-1; scene.add(pts); starMats.push(m); return m;
 }
-const starsA=starLayer(600,1.8,0.85,false), starsB=starLayer(1800,1.25,0.95,false), starsBig=starLayer(110,3.2,0.9,false), milky=starLayer(3200,1.3,0,true);
+const starsA=starLayer(5200,2.4,4.8,false), starsBig=starLayer(220,5.5,9.0,false), milky=starLayer(5200,1.8,3.0,true);
 const moon=new THREE.Mesh(new THREE.SphereGeometry(7,24,16),new THREE.MeshBasicMaterial({color:0xf3f0e6,fog:false,transparent:true,opacity:0}));
 moon.position.set(-95,R+62,-175); scene.add(moon);
 const moonGlow=new THREE.Mesh(new THREE.SphereGeometry(13,24,16),new THREE.MeshBasicMaterial({color:0xbfd0ff,fog:false,transparent:true,opacity:0,depthWrite:false}));
@@ -181,15 +197,61 @@ Object.assign(sun.shadow.camera,{left:-30,right:30,top:30,bottom:-30,near:1,far:
 sun.shadow.bias=-0.0004; sun.shadow.normalBias=0.04;
 scene.add(sun, sun.target);
 
+// ---- planetas lejanos (cielo planetario) ----
+const planetsG=new THREE.Group(); planetsG.visible=false; scene.add(planetsG);
+const planetMats=[];
+function planetTex(w,h,draw){ const t=canvasTex(w,h,draw); t.wrapS=THREE.RepeatWrapping; return t; }
+function bandTex(cols,seed,bands=26){ return planetTex(512,256,(x,w,h)=>{
+  let s=seed; const r=()=>{ s=(s*16807)%2147483647; return s/2147483647; };
+  for (let i=0;i<bands;i++){ const y0=i/bands*h; x.fillStyle=cols[Math.floor(r()*cols.length)]; x.fillRect(0,y0,w,h/bands+1); }
+  for (let i=0;i<220;i++){ x.globalAlpha=0.12; x.fillStyle=cols[Math.floor(r()*cols.length)]; const y=r()*h; x.fillRect(0,y,w,1+r()*5); }
+  x.globalAlpha=0.35; for (let i=0;i<6;i++){ x.fillStyle=cols[0]; x.beginPath(); x.ellipse(r()*w,h*0.3+r()*h*0.4,10+r()*26,5+r()*9,0,0,Math.PI*2); x.fill(); }
+  x.globalAlpha=1; }); }
+function planetMat(map,emis=0.28){ const m=new THREE.MeshStandardMaterial({map,emissive:0xffffff,emissiveMap:map,emissiveIntensity:emis,roughness:0.85,fog:false,transparent:true,opacity:0}); planetMats.push(m); return m; }
+// gigante gaseoso con anillos
+const giant=new THREE.Group(); giant.position.set(-82,R+13,-212); giant.scale.setScalar(0.62); planetsG.add(giant);
+const giantBody=new THREE.Mesh(new THREE.SphereGeometry(34,48,32),planetMat(bandTex(['#e9c48f','#d79a5c','#f3dfb6','#b9764a','#e5b27a','#c98d5d'],11)));
+giantBody.rotation.z=0.25; giant.add(giantBody);
+const ringTilt=new THREE.Group(); ringTilt.rotation.set(-1.25,0,0.32); giant.add(ringTilt);
+[[42,47,'#d8b98e',0.75],[47.5,52,'#f0dcb8',0.85],[53,55,'#b89670',0.45],[56,63,'#e7cfa3',0.6],[64,66,'#a98b67',0.35]].forEach(([a,b,c,o])=>{
+  const m=new THREE.MeshBasicMaterial({color:c,side:THREE.DoubleSide,transparent:true,opacity:0,fog:false,depthWrite:false}); m.userData.max=o; planetMats.push(m);
+  ringTilt.add(new THREE.Mesh(new THREE.RingGeometry(a,b,96),m)); });
+const giantMoon=new THREE.Mesh(new THREE.SphereGeometry(4.2,24,16),planetMat(planetTex(128,64,(x,w,h)=>{ x.fillStyle='#bdb8b0'; x.fillRect(0,0,w,h); for(let i=0;i<40;i++){ x.fillStyle=i%2?'#9d978f':'#d3cec6'; x.beginPath(); x.arc(Math.random()*w,Math.random()*h,1+Math.random()*5,0,7); x.fill(); } }),0.22));
+giant.add(giantMoon);
+// planeta helado
+const ice=new THREE.Mesh(new THREE.SphereGeometry(15,40,28),planetMat(bandTex(['#9fd8ff','#5aa7e8','#d9f1ff','#3f7fc7','#b6e3ff'],29,18),0.3));
+ice.position.set(78,R+9,-204); ice.scale.setScalar(0.72); planetsG.add(ice);
+const iceAtm=new THREE.Mesh(new THREE.SphereGeometry(16.6,40,28),new THREE.MeshBasicMaterial({color:0x8fd3ff,transparent:true,opacity:0,side:THREE.BackSide,fog:false,depthWrite:false}));
+iceAtm.material.userData.max=0.22; planetMats.push(iceAtm.material); ice.add(iceAtm);
+// planeta rojizo con cráteres
+const red=new THREE.Mesh(new THREE.SphereGeometry(8.5,36,24),planetMat(planetTex(256,128,(x,w,h)=>{
+  x.fillStyle='#b8553a'; x.fillRect(0,0,w,h);
+  for(let i=0;i<90;i++){ x.fillStyle=['#8f3c28','#d47a55','#a3462f','#e39a72'][i%4]; x.globalAlpha=0.6; x.beginPath(); x.arc(Math.random()*w,Math.random()*h,2+Math.random()*10,0,7); x.fill(); }
+  x.globalAlpha=1; x.fillStyle='#f3e4dc'; x.fillRect(0,0,w,7); x.fillRect(0,h-6,w,6); }),0.3));
+red.position.set(14,R+21,-232); red.scale.setScalar(0.8); planetsG.add(red);
+// estrella lejana brillante
+const farStar=new THREE.Mesh(new THREE.SphereGeometry(3,16,12),new THREE.MeshBasicMaterial({color:0xfff1d6,fog:false,transparent:true,opacity:0}));
+farStar.material.userData.max=1; planetMats.push(farStar.material); farStar.position.set(-36,R+19,-238); planetsG.add(farStar);
+const farGlow=new THREE.Mesh(new THREE.SphereGeometry(9,16,12),new THREE.MeshBasicMaterial({color:0xffc98a,fog:false,transparent:true,opacity:0,depthWrite:false}));
+farGlow.material.userData.max=0.18; planetMats.push(farGlow.material); farStar.add(farGlow);
+function updatePlanets(dt,t,k){
+  planetsG.visible=k>0.01;
+  if (!planetsG.visible) return;
+  for (const m of planetMats) m.opacity=k*(m.userData.max??1);
+  giantBody.rotation.y+=dt*0.04; ice.rotation.y-=dt*0.06; red.rotation.y+=dt*0.08;
+  giantMoon.position.set(Math.cos(t*0.08)*58,Math.sin(t*0.08)*10,Math.sin(t*0.08)*30);
+}
+
 // ================= MODOS DE CIELO =================
 const waterMats=[]; let lampBulbM=null, carHeadLight=null;
 const PAL={
-  sunset:{top:0x1d1650,mid:0x6a3fa0,bot:0xff9e8f,fog:0xe88a9a,hs:0xc9b8ff,hg:0x2f4a52,hi:1.0,sc:0xffb08a,si:2.2,sp:[-18,22,-12],stars:0.8,milky:0,moon:0,water:0xffc9bd,night:0.15},
-  day:   {top:0x2f7fe6,mid:0x7fbcf2,bot:0xd6eefc,fog:0xc8e4f6,hs:0xffffff,hg:0x557a3c,hi:1.15,sc:0xfff3df,si:2.7,sp:[10,40,8],stars:0,milky:0,moon:0,water:0xdff3ff,night:0},
-  night: {top:0x050918,mid:0x111a40,bot:0x2a3768,fog:0x1f2a52,hs:0x7d93d6,hg:0x18222e,hi:0.62,sc:0xb9ccff,si:0.85,sp:[18,30,-14],stars:0.95,milky:0.35,moon:1,water:0x8fa6e0,night:1},
-  stars: {top:0x01020a,mid:0x090d2a,bot:0x1b1d46,fog:0x151838,hs:0x7385cc,hg:0x16202c,hi:0.58,sc:0xb4c6ff,si:0.8,sp:[18,30,-14],stars:1,milky:0.9,moon:1,water:0x7f94d6,night:1}
+  sunset:{top:0x1d1650,mid:0x6a3fa0,bot:0xff9e8f,fog:0xe88a9a,hs:0xc9b8ff,hg:0x2f4a52,hi:1.0,sc:0xffb08a,si:2.2,sp:[-18,22,-12],stars:0.8,milky:0,moon:0,water:0xffc9bd,night:0.15,neb:0,planets:0},
+  day:   {top:0x2f7fe6,mid:0x7fbcf2,bot:0xd6eefc,fog:0xc8e4f6,hs:0xffffff,hg:0x557a3c,hi:1.15,sc:0xfff3df,si:2.7,sp:[10,40,8],stars:0,milky:0,moon:0,water:0xdff3ff,night:0,neb:0,planets:0},
+  night: {top:0x050918,mid:0x111a40,bot:0x2a3768,fog:0x1f2a52,hs:0x7d93d6,hg:0x18222e,hi:0.62,sc:0xb9ccff,si:0.85,sp:[18,30,-14],stars:0.95,milky:0.35,moon:1,water:0x8fa6e0,night:1,neb:0,planets:0},
+  stars: {top:0x01020a,mid:0x090d2a,bot:0x1b1d46,fog:0x151838,hs:0x7385cc,hg:0x16202c,hi:0.58,sc:0xb4c6ff,si:0.8,sp:[18,30,-14],stars:1,milky:0.9,moon:1,water:0x7f94d6,night:1,neb:0.22,planets:0},
+  planets:{top:0x04031a,mid:0x120c38,bot:0x26185a,fog:0x1b1340,hs:0x8f80e6,hg:0x171428,hi:0.66,sc:0xffe0c2,si:1.0,sp:[-34,26,-12],stars:1,milky:0.55,moon:0,water:0x9a88e8,night:1,neb:1,planets:1}
 };
-const SKY_ORDER=['sunset','day24','stars'], SKY_NAME={sunset:'🌅 Cielo: Atardecer',day24:'🕑 Cielo: 24 h',stars:'✨ Cielo: Estrellado'};
+const SKY_ORDER=['sunset','day24','stars','planets'], SKY_NAME={sunset:'🌅 Cielo: Atardecer',day24:'🕑 Cielo: 24 h',stars:'✨ Cielo: Estrellado',planets:'🪐 Cielo: Planetario'};
 let skyMode='sunset'; try{ const v=localStorage.getItem('mdw_sky'); if (SKY_ORDER.includes(v)) skyMode=v; }catch(e){}
 const _ca=new THREE.Color(), _cb=new THREE.Color();
 function lerpHex(a,b,k,out){ return out.set(a).lerp(_cb.set(b),k); }
@@ -236,6 +298,7 @@ const curSky={}; let skyBlend=null;
 function targetSky(){
   if (skyMode==='sunset') return {A:PAL.sunset,B:PAL.sunset,k:0,label:'Atardecer'};
   if (skyMode==='stars') return {A:PAL.stars,B:PAL.stars,k:0,label:'Estrellado'};
+  if (skyMode==='planets') return {A:PAL.planets,B:PAL.planets,k:0,label:'Planetario'};
   return dayPhase();
 }
 const NUM=(a,b,k)=>a+(b-a)*k;
@@ -247,7 +310,7 @@ function applySky(dt,t){
     if (!curSky[key]) curSky[key]=new THREE.Color(lerpHex(A[key],B[key],k,new THREE.Color()));
     lerpHex(A[key],B[key],k,_ca); curSky[key].lerp(_ca,s);
   }
-  for (const key of ['hi','si','stars','milky','moon','night']){
+  for (const key of ['hi','si','stars','milky','moon','night','neb','planets']){
     const v=NUM(A[key],B[key],k); curSky[key]=curSky[key]===undefined?v:curSky[key]+(v-curSky[key])*s;
   }
   const sp=[NUM(A.sp[0],B.sp[0],k),NUM(A.sp[1],B.sp[1],k),NUM(A.sp[2],B.sp[2],k)];
@@ -256,9 +319,10 @@ function applySky(dt,t){
   scene.background.copy(curSky.bot); scene.fog.color.copy(curSky.fog);
   hemi.color.copy(curSky.hs); hemi.groundColor.copy(curSky.hg); hemi.intensity=curSky.hi;
   sun.color.copy(curSky.sc); sun.intensity=curSky.si; sun.position.set(curSky.sp.x,R+curSky.sp.y,curSky.sp.z);
-  const tw=0.85+0.15*Math.sin(t*3.1);
-  starsA.opacity=curSky.stars; starsB.opacity=curSky.stars*0.75*tw; starsBig.opacity=curSky.stars*(0.8+0.2*Math.sin(t*1.7));
-  milky.opacity=curSky.milky*0.7;
+  for (const m of starMats) m.uniforms.uTime.value=t;
+  starsA.uniforms.uOpacity.value=curSky.stars; starsBig.uniforms.uOpacity.value=curSky.stars;
+  milky.uniforms.uOpacity.value=curSky.milky*0.55;
+  skyU.neb.value=curSky.neb; updatePlanets(dt,t,curSky.planets);
   moon.material.opacity=curSky.moon; moonGlow.material.opacity=curSky.moon*0.12;
   for (const m of waterMats) m.uniforms.sky.value.copy(curSky.water);
   if (lampBulbM) lampBulbM.emissiveIntensity=1.2+curSky.night*2.2;
@@ -1323,9 +1387,9 @@ function toggleDist(){ distMode=DIST_ORDER[(DIST_ORDER.indexOf(distMode)+1)%3]; 
 function paintSky(info){ const b=document.getElementById('skyBtn');
   b.textContent = skyMode==='day24' && info ? `🕑 24 h · ${info.clock} · ${info.label}` : SKY_NAME[skyMode];
   b.classList.toggle('on',skyMode!=='sunset'); }
-function toggleSky(){ skyMode=SKY_ORDER[(SKY_ORDER.indexOf(skyMode)+1)%3]; try{ localStorage.setItem('mdw_sky',skyMode); }catch(e){}
+function toggleSky(){ skyMode=SKY_ORDER[(SKY_ORDER.indexOf(skyMode)+1)%SKY_ORDER.length]; try{ localStorage.setItem('mdw_sky',skyMode); }catch(e){}
   paintSky(skyMode==='day24'?dayPhase():null);
-  toast(skyMode==='sunset'?'🌅 Puesta de sol':skyMode==='stars'?'✨ Cielo estrellado':(()=>{ const i=dayPhase(); return `🕑 Sol real · amanece ${i.rise} · se pone ${i.set}`; })()); }
+  toast(skyMode==='sunset'?'🌅 Puesta de sol':skyMode==='stars'?'✨ Cielo estrellado':skyMode==='planets'?'🪐 Cielo planetario':(()=>{ const i=dayPhase(); return `🕑 Sol real · amanece ${i.rise} · se pone ${i.set}`; })()); }
 document.getElementById('distBtn').addEventListener('click',toggleDist);
 document.getElementById('skyBtn').addEventListener('click',toggleSky);
 paintDist(); paintSky(skyMode==='day24'?dayPhase():null);
@@ -1338,13 +1402,13 @@ function syncSheet(){
   const cur={cam:camMode,dist:distMode,sky:skyMode,mode};
   sheet.querySelectorAll('.seg').forEach(g=>g.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.v===cur[g.dataset.group])));
   const info=skyMode==='day24'?dayPhase():null;
-  document.getElementById('skyHint').textContent = info ? `Sol real (${info.place}): ${info.label} · amanece ${info.rise}, se pone ${info.set}` : skyMode==='stars' ? 'Noche despejada con vía láctea y estrellas fugaces' : 'La puesta de sol de siempre';
+  document.getElementById('skyHint').textContent = info ? `Sol real (${info.place}): ${info.label} · amanece ${info.rise}, se pone ${info.set}` : skyMode==='stars' ? 'Noche despejada con vía láctea y estrellas fugaces' : skyMode==='planets' ? 'Espacio profundo: planetas, anillos y nebulosas a lo lejos' : 'La puesta de sol de siempre';
 }
 sheet.querySelectorAll('.seg').forEach(g=>g.addEventListener('click',e=>{
   const b=e.target.closest('button'); if(!b) return; const v=b.dataset.v, grp=g.dataset.group;
   if (grp==='cam'){ let n=0; while(camMode!==v && n++<3) toggleCam(); }
   if (grp==='dist'){ let n=0; while(distMode!==v && n++<3) toggleDist(); }
-  if (grp==='sky'){ let n=0; while(skyMode!==v && n++<3) toggleSky(); }
+  if (grp==='sky'){ let n=0; while(skyMode!==v && n++<4) toggleSky(); }
   if (grp==='mode' && mode!==v && playing) toggleMode();
   syncSheet();
 }));
