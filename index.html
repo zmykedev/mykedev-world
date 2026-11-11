@@ -209,7 +209,7 @@ function bandTex(cols,seed,bands=26){ return planetTex(512,256,(x,w,h)=>{
   x.globalAlpha=1; }); }
 function planetMat(map,emis=0.28){ const m=new THREE.MeshStandardMaterial({map,emissive:0xffffff,emissiveMap:map,emissiveIntensity:emis,roughness:0.85,fog:false,transparent:true,opacity:0}); planetMats.push(m); return m; }
 // gigante gaseoso con anillos
-const giant=new THREE.Group(); giant.position.set(-82,R+13,-212); giant.scale.setScalar(0.62); planetsG.add(giant);
+const giant=new THREE.Group(); giant.position.set(-44,R-30,-214); giant.scale.setScalar(0.6); planetsG.add(giant);
 const giantBody=new THREE.Mesh(new THREE.SphereGeometry(34,48,32),planetMat(bandTex(['#e9c48f','#d79a5c','#f3dfb6','#b9764a','#e5b27a','#c98d5d'],11)));
 giantBody.rotation.z=0.25; giant.add(giantBody);
 const ringTilt=new THREE.Group(); ringTilt.rotation.set(-1.25,0,0.32); giant.add(ringTilt);
@@ -220,7 +220,7 @@ const giantMoon=new THREE.Mesh(new THREE.SphereGeometry(4.2,24,16),planetMat(pla
 giant.add(giantMoon);
 // planeta helado
 const ice=new THREE.Mesh(new THREE.SphereGeometry(15,40,28),planetMat(bandTex(['#9fd8ff','#5aa7e8','#d9f1ff','#3f7fc7','#b6e3ff'],29,18),0.3));
-ice.position.set(78,R+9,-204); ice.scale.setScalar(0.72); planetsG.add(ice);
+ice.position.set(46,R-17,-206); ice.scale.setScalar(0.7); planetsG.add(ice);
 const iceAtm=new THREE.Mesh(new THREE.SphereGeometry(16.6,40,28),new THREE.MeshBasicMaterial({color:0x8fd3ff,transparent:true,opacity:0,side:THREE.BackSide,fog:false,depthWrite:false}));
 iceAtm.material.userData.max=0.22; planetMats.push(iceAtm.material); ice.add(iceAtm);
 // planeta rojizo con cráteres
@@ -228,10 +228,10 @@ const red=new THREE.Mesh(new THREE.SphereGeometry(8.5,36,24),planetMat(planetTex
   x.fillStyle='#b8553a'; x.fillRect(0,0,w,h);
   for(let i=0;i<90;i++){ x.fillStyle=['#8f3c28','#d47a55','#a3462f','#e39a72'][i%4]; x.globalAlpha=0.6; x.beginPath(); x.arc(Math.random()*w,Math.random()*h,2+Math.random()*10,0,7); x.fill(); }
   x.globalAlpha=1; x.fillStyle='#f3e4dc'; x.fillRect(0,0,w,7); x.fillRect(0,h-6,w,6); }),0.3));
-red.position.set(14,R+21,-232); red.scale.setScalar(0.8); planetsG.add(red);
+red.position.set(8,R-3,-232); red.scale.setScalar(0.8); planetsG.add(red);
 // estrella lejana brillante
 const farStar=new THREE.Mesh(new THREE.SphereGeometry(3,16,12),new THREE.MeshBasicMaterial({color:0xfff1d6,fog:false,transparent:true,opacity:0}));
-farStar.material.userData.max=1; planetMats.push(farStar.material); farStar.position.set(-36,R+19,-238); planetsG.add(farStar);
+farStar.material.userData.max=1; planetMats.push(farStar.material); farStar.position.set(-18,R+5,-240); planetsG.add(farStar);
 const farGlow=new THREE.Mesh(new THREE.SphereGeometry(9,16,12),new THREE.MeshBasicMaterial({color:0xffc98a,fog:false,transparent:true,opacity:0,depthWrite:false}));
 farGlow.material.userData.max=0.18; planetMats.push(farGlow.material); farStar.add(farGlow);
 function updatePlanets(dt,t,k){
