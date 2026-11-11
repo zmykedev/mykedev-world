@@ -22,10 +22,20 @@ Súbete al auto, recorre un pequeño planeta al atardecer y descubre mi stack, m
 |---|---|---|
 | Acelerar / frenar | `W` `S` o `↑` `↓` | ▲ ▼ |
 | Girar (modo libre) | `A` `D` o `←` `→` | ◀ ▶ |
-| Modo libre / volver al camino | `F` | botón 🧭 |
-| Cambiar vista (trasera / frontal / lateral) | `C` | botón 🎥 |
+| Modo libre / volver al camino | `F` | ⚙️ Vista → Recorrido |
+| Cambiar vista (trasera / frontal / lateral) | `C` | ⚙️ Vista → Cámara |
+| Distancia de cámara (normal / lejana / aérea) | `V` | ⚙️ Vista → Distancia |
+| Cielo (atardecer / 24 h / estrellado) | `L` | ⚙️ Vista → Cielo |
 
 En **modo libre** puedes salir del camino: chocas solo con árboles, faroles y edificios; las flores y el pasto se aplastan (y se levantan solos).
+
+## Cielos
+
+- **Atardecer:** la puesta de sol de siempre.
+- **24 h:** el cielo sigue la hora local de quien juega: día, amanecer/atardecer o noche con luna y estrellas.
+- **Estrellado:** noche despejada con vía láctea, luna y estrellas fugaces.
+
+La elección de cielo y distancia se recuerda en el navegador.
 
 ## Tecnología
 
